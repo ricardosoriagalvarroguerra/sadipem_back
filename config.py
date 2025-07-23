@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Primero intenta leer DATABASE_URL (Railway la inyecta en producción)
-DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = DATABASE_URL
 else:
