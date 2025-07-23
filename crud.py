@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Integer
+from sqlalchemy import func, cast, Integer, text
 from collections import defaultdict
 from models import DatosSadipem
 
@@ -24,11 +24,27 @@ def get_sectores(db: Session):
     return [s[0] for s in db.query(DatosSadipem.sector).distinct().all() if s[0]]
 
 def get_stats(db: Session):
-    total_por_region = db.query(DatosSadipem.região, func.sum(DatosSadipem.valor_usd)).group_by(DatosSadipem.região).all()
-    total_por_sector = db.query(DatosSadipem.sector, func.sum(DatosSadipem.valor_usd)).group_by(DatosSadipem.sector).all()
+    sql = text(
+        """
+        SELECT "região" AS region, sector, SUM(valor_usd) AS total_usd
+        FROM datos_sadipem
+        GROUP BY GROUPING SETS (("região"), (sector))
+        """
+    )
+
+    results = db.execute(sql).all()
+
+    total_por_region = []
+    total_por_sector = []
+    for region, sector, total in results:
+        if region is not None:
+            total_por_region.append({"region": region, "total_usd": total})
+        elif sector is not None:
+            total_por_sector.append({"sector": sector, "total_usd": total})
+
     return {
-        "total_por_region": [{"region": r, "total_usd": t} for r, t in total_por_region],
-        "total_por_sector": [{"sector": s, "total_usd": t} for s, t in total_por_sector],
+        "total_por_region": total_por_region,
+        "total_por_sector": total_por_sector,
     }
 
 def get_valores_por_ente(db: Session):
