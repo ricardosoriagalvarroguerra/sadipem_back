@@ -1,14 +1,15 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import func, cast, Integer
+from collections import defaultdict
 from models import DatosSadipem
 
 def get_datos(db: Session, region: str = None, sector: str = None):
-    from sqlalchemy import cast, Integer
+    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
     query = db.query(DatosSadipem)
     # Filtro por año de fecha_contratacion entre 2018 y 2024
     query = query.filter(
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) >= 2018,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) <= 2024
+        year_col >= 2018,
+        year_col <= 2024
     )
     if region:
         query = query.filter(DatosSadipem.região == region)
@@ -31,66 +32,79 @@ def get_stats(db: Session):
     }
 
 def get_valores_por_ente(db: Session):
-    from sqlalchemy import case, desc, cast, Integer
-    # Filtra por garantia_soberana = 'Si', tiempo_prestamo > 14 y año entre 2019 y 2024
-    query = db.query(
-        DatosSadipem.tipo_ente,
-        DatosSadipem.ente,
-        DatosSadipem.garantia_soberana,
-        func.sum(DatosSadipem.valor_usd)
-    ).filter(
+    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
+    common_filters = [
         DatosSadipem.garantia_soberana == 'Si',
         DatosSadipem.tiempo_prestamo > 14,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) >= 2019,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) <= 2024
-    ).group_by(DatosSadipem.tipo_ente, DatosSadipem.ente, DatosSadipem.garantia_soberana)
-    resultados = query.all()
+        year_col >= 2019,
+        year_col <= 2024,
+    ]
 
-    # Para cada ente, obtener el top 5 financiadores
-    top_financiadores_dict = {}
-    subq = db.query(
-        DatosSadipem.ente,
-        DatosSadipem.nombre_acreedor,
-        func.sum(DatosSadipem.valor_usd).label('total_usd')
-    ).filter(
-        DatosSadipem.garantia_soberana == 'Si',
-        DatosSadipem.tiempo_prestamo > 14,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) >= 2019,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) <= 2024
-    ).group_by(DatosSadipem.ente, DatosSadipem.nombre_acreedor).subquery()
+    # Totales por ente
+    resultados = (
+        db.query(
+            DatosSadipem.tipo_ente,
+            DatosSadipem.ente,
+            DatosSadipem.garantia_soberana,
+            func.sum(DatosSadipem.valor_usd).label('total_usd')
+        )
+        .filter(*common_filters)
+        .group_by(DatosSadipem.tipo_ente, DatosSadipem.ente, DatosSadipem.garantia_soberana)
+        .all()
+    )
 
-    for row in db.query(subq.c.ente, subq.c.nombre_acreedor, subq.c.total_usd).order_by(subq.c.ente, desc(subq.c.total_usd)):
-        if row.ente not in top_financiadores_dict:
-            top_financiadores_dict[row.ente] = []
-        if len(top_financiadores_dict[row.ente]) < 5:
-            top_financiadores_dict[row.ente].append({
-                'nombre_acreedor': row.nombre_acreedor,
-                'total_usd': row.total_usd
-            })
+    # Top 5 financiadores por ente utilizando funciones de ventana
+    subq_fin = (
+        db.query(
+            DatosSadipem.ente.label('ente'),
+            DatosSadipem.nombre_acreedor.label('nombre_acreedor'),
+            func.sum(DatosSadipem.valor_usd).label('total_usd'),
+            func.row_number().over(
+                partition_by=DatosSadipem.ente,
+                order_by=func.sum(DatosSadipem.valor_usd).desc()
+            ).label('rn')
+        )
+        .filter(*common_filters)
+        .group_by(DatosSadipem.ente, DatosSadipem.nombre_acreedor)
+    ).subquery()
 
-    # Para cada ente, obtener el top 5 sectores
-    top_sectores_dict = {}
-    subq_sector = db.query(
-        DatosSadipem.ente,
-        DatosSadipem.sector,
-        func.sum(DatosSadipem.valor_usd).label('total_usd')
-    ).filter(
-        DatosSadipem.garantia_soberana == 'Si',
-        DatosSadipem.tiempo_prestamo > 14,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) >= 2019,
-        cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer) <= 2024
-    ).group_by(DatosSadipem.ente, DatosSadipem.sector).subquery()
+    top_financiadores_dict = defaultdict(list)
+    for row in db.query(subq_fin).filter(subq_fin.c.rn <= 5).all():
+        top_financiadores_dict[row.ente].append({
+            'nombre_acreedor': row.nombre_acreedor,
+            'total_usd': row.total_usd
+        })
 
-    for row in db.query(subq_sector.c.ente, subq_sector.c.sector, subq_sector.c.total_usd).order_by(subq_sector.c.ente, desc(subq_sector.c.total_usd)):
-        if row.ente not in top_sectores_dict:
-            top_sectores_dict[row.ente] = []
-        if len(top_sectores_dict[row.ente]) < 5:
-            top_sectores_dict[row.ente].append({
-                'sector': row.sector,
-                'total_usd': row.total_usd
-            })
+    # Top 5 sectores por ente utilizando funciones de ventana
+    subq_sec = (
+        db.query(
+            DatosSadipem.ente.label('ente'),
+            DatosSadipem.sector.label('sector'),
+            func.sum(DatosSadipem.valor_usd).label('total_usd'),
+            func.row_number().over(
+                partition_by=DatosSadipem.ente,
+                order_by=func.sum(DatosSadipem.valor_usd).desc()
+            ).label('rn')
+        )
+        .filter(*common_filters)
+        .group_by(DatosSadipem.ente, DatosSadipem.sector)
+    ).subquery()
+
+    top_sectores_dict = defaultdict(list)
+    for row in db.query(subq_sec).filter(subq_sec.c.rn <= 5).all():
+        top_sectores_dict[row.ente].append({
+            'sector': row.sector,
+            'total_usd': row.total_usd
+        })
 
     return [
-        {"tipo_ente": tipo_ente, "ente": ente, "garantia_soberana": garantia_soberana, "total_usd": total_usd, "top_financiadores": top_financiadores_dict.get(ente, []), "top_sectores": top_sectores_dict.get(ente, [])}
+        {
+            'tipo_ente': tipo_ente,
+            'ente': ente,
+            'garantia_soberana': garantia_soberana,
+            'total_usd': total_usd,
+            'top_financiadores': top_financiadores_dict.get(ente, []),
+            'top_sectores': top_sectores_dict.get(ente, [])
+        }
         for tipo_ente, ente, garantia_soberana, total_usd in resultados
     ]
