@@ -3,23 +3,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import router
 import os
 
-# Read allowed origins from the environment. If none are provided we
-# default to "*".  Credentials are only allowed when a specific origin
-# list is supplied to avoid FastAPI raising errors when using "*" with
-# credentials enabled.
-origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+# Allowed origin for requests coming from the frontend.  If the
+# ALLOWED_ORIGINS environment variable is defined it will override this
+# value, allowing multiple comma separated origins.  The default keeps
+# the API restricted to the production frontend domain.
+default_origin = "https://sadipemfront-production.up.railway.app"
+origins_env = os.getenv("ALLOWED_ORIGINS", default_origin)
 origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
-if origins == ["*"]:
-    allow_credentials = False
-else:
-    allow_credentials = True
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=allow_credentials,
+    # Credentials such as cookies or Authorization headers are permitted
+    # because the allowed origins list does not contain a wildcard.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
