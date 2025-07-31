@@ -30,3 +30,9 @@ if not SQLALCHEMY_DATABASE_URL:
 
 # Ahora tu database.py sigue igual:
 # engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
+# Configuración de Redis
+REDIS_HOST = os.getenv("REDISHOST", "localhost")
+REDIS_PORT = int(os.getenv("REDISPORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDISPASSWORD")
+REDIS_USER = os.getenv("REDISUSER")
