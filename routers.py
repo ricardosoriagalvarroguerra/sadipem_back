@@ -4,6 +4,7 @@ import logging
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 import json
+import redis
 from database import SessionLocal
 from cache import redis_client
 import crud, schemas
@@ -113,3 +114,23 @@ def read_valores_ente(db: Session = Depends(get_db)):
         except redis.RedisError as exc:
             logger.warning("Redis error setting %s: %s", key, exc)
     return valores
+
+
+@router.get("/api/interno_externo_sector/{year}", response_model=list[schemas.InternoExternoSectorSchema])
+def read_interno_externo_sector(year: int, db: Session = Depends(get_db)):
+    key = f"interno_externo_sector:{year}"
+    cached = None
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+        except redis.RedisError as exc:
+            logger.warning("Redis error getting %s: %s", key, exc)
+    if cached:
+        return json.loads(cached)
+    data = crud.get_interno_externo_por_sector(db, year)
+    if redis_client:
+        try:
+            redis_client.set(key, json.dumps(jsonable_encoder(data)), ex=300)
+        except redis.RedisError as exc:
+            logger.warning("Redis error setting %s: %s", key, exc)
+    return data
