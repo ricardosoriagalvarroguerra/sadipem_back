@@ -35,3 +35,9 @@ class RegionResponse(BaseModel):
 
 class SectorResponse(BaseModel):
     sectores: list[str]
+
+
+class InternoExternoSectorSchema(BaseModel):
+    sector: Optional[str]
+    interno: float
+    externo: float

@@ -124,3 +124,28 @@ def get_valores_por_ente(db: Session):
         }
         for tipo_ente, ente, garantia_soberana, total_usd in resultados
     ]
+
+
+def get_interno_externo_por_sector(db: Session, year: int):
+    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
+    resultados = (
+        db.query(
+            DatosSadipem.sector,
+            DatosSadipem.tipo_deuda,
+            func.sum(DatosSadipem.valor_usd).label('total_usd')
+        )
+        .filter(year_col == year)
+        .group_by(DatosSadipem.sector, DatosSadipem.tipo_deuda)
+        .all()
+    )
+
+    data = defaultdict(lambda: {'interno': 0, 'externo': 0})
+    for sector, tipo_deuda, total in resultados:
+        if tipo_deuda:
+            tipo = 'interno' if tipo_deuda.lower().startswith('int') else 'externo'
+            data[sector][tipo] = total
+
+    return [
+        {'sector': sector, 'interno': valores['interno'], 'externo': valores['externo']}
+        for sector, valores in data.items()
+    ]
