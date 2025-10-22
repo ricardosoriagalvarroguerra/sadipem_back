@@ -1,15 +1,15 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Integer, text
+from sqlalchemy import func, text
 from collections import defaultdict
 from models import DatosSadipem
 
 def get_datos(db: Session, region: str = None, sector: str = None):
-    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
+    year_col = func.substr(DatosSadipem.fecha_contratacion, 1, 4)
     query = db.query(DatosSadipem)
     # Filtro por año de fecha_contratacion entre 2018 y 2024
     query = query.filter(
-        year_col >= 2018,
-        year_col <= 2024
+        year_col >= "2018",
+        year_col <= "2024"
     )
     if region:
         query = query.filter(DatosSadipem.região == region)
@@ -48,12 +48,12 @@ def get_stats(db: Session):
     }
 
 def get_valores_por_ente(db: Session):
-    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
+    year_col = func.substr(DatosSadipem.fecha_contratacion, 1, 4)
     common_filters = [
         DatosSadipem.garantia_soberana == 'Si',
         DatosSadipem.tiempo_prestamo > 14,
-        year_col >= 2019,
-        year_col <= 2024,
+        year_col >= "2019",
+        year_col <= "2024",
     ]
 
     # Totales por ente
@@ -127,14 +127,15 @@ def get_valores_por_ente(db: Session):
 
 
 def get_interno_externo_por_sector(db: Session, year: int):
-    year_col = cast(func.substr(DatosSadipem.fecha_contratacion, 1, 4), Integer)
+    year_col = func.substr(DatosSadipem.fecha_contratacion, 1, 4)
+    str_year = str(year)
     resultados = (
         db.query(
             DatosSadipem.sector,
             DatosSadipem.tipo_deuda,
             func.sum(DatosSadipem.valor_usd).label('total_usd')
         )
-        .filter(year_col == year)
+        .filter(year_col == str_year)
         .group_by(DatosSadipem.sector, DatosSadipem.tipo_deuda)
         .all()
     )
